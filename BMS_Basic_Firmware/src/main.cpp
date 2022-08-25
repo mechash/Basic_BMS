@@ -2,96 +2,135 @@
 #include <U8g2lib.h>
 #include <Wire.h>
 
-#define Vout A0
+#define Vin A0
 
-U8G2_SH1106_128X64_NONAME_F_HW_I2C oled_display(U8G2_R0,/* reset=*/ U8X8_PIN_NONE);
+U8G2_SH1106_128X64_NONAME_F_HW_I2C oled_display(U8G2_R0, U8X8_PIN_NONE);
 
-float V1_multiplier = 0.004730594;//0.004217391;//0.004210230;
-float V2_multiplier = 1.031250000;
+int raw;
+float Vref = 5.0, resolution = 1024.0;
+float R1 = 5100, R2 = 10000;
 
-float V1_offset = 0.003;
-float V2_offset = -0.003;
+float offset = -0.04;
 
-int raw = 0.00;
-double V1_val = 0.00, V2_val = 0.00;
-double V1_sum = 0.00, V2_sum = 0.00;
-double V1_avg , V2_avg = 0.00;
+float Vraw = 0.0, Volt_sum = 0.0, Volt_cal = 0.0;
+float Volt = 0.0, mVolt = 0.0;
 
-String V = " V";
+float amperage_meter_scale = 410.4488889; 
+float amperage_meter_offset = 0.0;
+float Amps = 0.0, mAmps = 0.0, mah = 0.00;
 
-void raw_avg(){
-  for(int i = 0; i <= 100; i++)
+unsigned long previousMillis = 0; // Previous time in ms
+unsigned long millisPassed = 0;  // Current time in ms
+
+int a;
+int sum_mAh,avg_mAh ;
+int new_mAh ;
+
+String V = "V";
+String mV = "mV";
+String Amp = "A";
+String mA = "mA";
+String mAh = "mAh";
+String V_ch, mA_ch, mAh_ch ;
+
+void Cal_Voltage(){
+  for( int i = 0; i <= 100; i++ )
   {
-    raw = analogRead(A0);
-    V1_sum = (raw * 5.0)/1024.0;
-    V1_avg = 5100+10000;
-    V1_val = (10000/V1_avg);
-    V2_avg = (V1_sum /V1_val);
-    V2_sum += V2_avg;
-    if(i == 100)
+    raw = analogRead(Vin);
+    Vraw = ( ( raw * Vref ) / resolution ) - 0.1;
+    Volt_cal = ( Vraw / ( R2 / ( R1 + R2 ) ) );
+    Volt_sum += Volt_cal;
+    if( i == 100 )
     {
-      V2_val = (V2_sum / 100)+0.02;
-      V2_sum = 0.00;
+      Volt = ( Volt_sum / 100 ) + offset;
+      mVolt = Volt * 1000;
+      Volt_sum = 0.00;
     }
-  //   raw = analogRead(Vout);
-  //   V1_avg = raw * V1_multiplier;
-  //   V1_sum += V1_avg;
-  //   V2_avg = (raw * V1_multiplier)*V2_multiplier;
-  //   V2_sum += V2_avg;
-  //   if(i == 99){
-  //     V1_val = V1_sum /99;
-  //     V1_sum = 0.00;
-  //     V2_val = V2_sum /99;
-  //     V2_sum = 0.00;
-  //   }
   }
 }
 
 
-// void Calculation(){
-//   for(int i = 0; i <= 99; i++)
-//   {
-//     V1_val = (raw * V1_multiplier) + V1_offset;
-//     V2_val = (V1_val * V2_multiplier) + V2_offset;
-//     V1_sum += V1_val;
-//     V2_sum += V2_val; 
-//     if(i == 99)
-//     {
-//       V1_avg = V1_sum / 100;
-//       V2_avg = V2_sum / 100;      
-//       V1_sum = 0.00;
-//       V2_sum = 0.00;
-//     }
-//   }
-// }
+void Cal_Amps(){
+  millisPassed = millis() - previousMillis;
+  Amps = ( Volt /  amperage_meter_scale * 10.0  + amperage_meter_offset  / 1000.0 );
+  mAmps = Amps * 1000.0;
+  
+  mah = mah + mAmps * (millisPassed / 3600000.0);
+  previousMillis = millis();
+}
+
+void Cal_mAh(){
+  float set_mult = 0.581818182;
+  sum_mAh = ((4.35 - Volt) * set_mult)*1000;
+  avg_mAh += sum_mAh;
+  a ++;
+
+  if(a == 10){
+    new_mAh = avg_mAh / 10;
+    mAh_ch = new_mAh + mAh ;
+    a = 0;
+    avg_mAh = 0;
+  }
+}
+
+void display_print(){
+  oled_display.clearBuffer();					// clear the internal memory
+  V_ch = Volt + V;
+  oled_display.setCursor(0,20);	
+  oled_display.print(F("Volt = "));
+  oled_display.print(Volt);
+  oled_display.print(F(" V"));
+  oled_display.setCursor(0,30);	
+  oled_display.print(F("mAmps = "));
+  oled_display.print(Amps);
+  oled_display.print(F(" mA"));
+  // oled_display.setCursor(35,18);
+  // oled_display.print(Volt );
+  // oled_display.setCursor(0,28);	
+  // oled_display.print("mV  = ");
+  // oled_display.setCursor(35,28);
+  // oled_display.print(mVolt );
+  // oled_display.setCursor(0,38);
+  // oled_display.print("mAmp = ");
+  // oled_display.setCursor(40,38);
+  // oled_display.print(mAmps );
+  //oled_display.setCursor(0,48);
+  // oled_display.print("mAh = ");
+  oled_display.setCursor(0,50);
+  oled_display.print(F("mAh = "));
+  oled_display.print(new_mAh);
+  oled_display.print(F(" mAh"));
+  oled_display.sendBuffer();	
+}
 
 void setup() {
 
   Serial.begin(9600);
-  pinMode(Vout,INPUT);
+  pinMode(Vin,INPUT);
   oled_display.setI2CAddress(0x78);
   oled_display.begin();
   oled_display.setFont(u8g2_font_profont12_tf);
   oled_display.clearDisplay();
   
 }
+long interval = 1000;
 
+unsigned long previousMillis2 = 0;
 void loop() {
-  raw_avg();
-  //Calculation();
-  oled_display.clearBuffer();					// clear the internal memory
-  oled_display.setCursor(0,8);	
-  oled_display.print("raw = ");
-  oled_display.setCursor(35,8);
-  oled_display.print(raw);
-  oled_display.setCursor(0,18);	
-  oled_display.print("V1  = ");
-  oled_display.setCursor(35,18);
-  oled_display.print(V1_val + V);
-  oled_display.setCursor(0,28);	
-  oled_display.print("V2 = ");
-  oled_display.setCursor(35,28);
-  oled_display.print(V2_val + V);
-  oled_display.sendBuffer();					// transfer internal memory to the display
-  delay(100);  
+  Cal_Voltage();
+  Cal_mAh();
+  Cal_Amps();
+
+unsigned long currentMillis2 = millis();
+  
+  
+  if(currentMillis2 - previousMillis2  >= 1000) {
+    
+    // save the last time you blinked the LED 
+    
+    display_print();
+    previousMillis2 = currentMillis2;
+    
+  }
+   
 }
